@@ -4,14 +4,14 @@ import requests
 import sys
 import urllib.parse
 
-def get_forward(url, history=None):
+def get_forward_online(url, history=None):
     if (history is None):
         history = list()
     if (len(url) < 2):
         return (url, history)
     sys.stderr.write("GET " + url + "\n")
     try:
-        head = requests.head(url)
+        head = requests.head(url, timeout=10)
     except Exception:
         sys.stderr.write("Warning: Exception for url: " + url + "\n")
         return (url, history)
@@ -22,13 +22,13 @@ def get_forward(url, history=None):
             location = head.headers['Location']
             location = urllib.parse.urljoin(url, location)
             history.append(url)
-            return get_forward(location, history)
+            return get_forward_online(location, history)
         else:
             raise ValueError('No Location header')
     else:
         if (code != 200):
             sys.stderr.write("Warning: " + str(code) + " for url: " + url + "\n")
-        return (url, history)
+    return (url, history)
 
 
 def add_protocol(url):
@@ -45,11 +45,41 @@ def print_csv(id, url1, hist1, url2, hist2, url3, hist3):
 
 print ('TwitterID;URL1;HISTORY1;URL2;HISTORY2;URL3;HISTORY3;')
 
+h_cache = dict()
+u_cache = dict()
+
+def add_to_cache(url, hist):
+    res = hist.split()
+    if (len(res) > 1):
+        u_cache[res[0]] = url
+        h_cache[res[0]] = res
+ 
+def get_forward(url):
+    url = add_protocol(url)
+    if (url in h_cache):
+        hist = h_cache[url]
+        res  = u_cache[url]
+        sys.stderr.write("CACHED: " + url + "\n")
+        return (res, hist)
+    else:
+        return get_forward_online(url)
+ 
+try:
+    with open('URLS_checked.csv', 'r') as csvfile:
+        for row in csvfile:
+            (id, url1, hist1, url2, hist2, url3, hist3) = row.split(';', 6)
+            add_to_cache(url1, hist1)
+            add_to_cache(url2, hist2)
+            add_to_cache(url3, hist3)
+except FileNotFoundError:
+    pass
+
+
 with open('URLS_to_check.csv', 'r') as csvfile:
-   for row in csvfile:
-       (id, url1, url2, url3, rest) = row.split(';', 4)
-       if (id != "TwitterID"):
-           (url1, hist1) = get_forward(add_protocol(url1))
-           (url2, hist2) = get_forward(add_protocol(url2))
-           (url3, hist3) = get_forward(add_protocol(url3))
-           print_csv(id, url1, hist1, url2, hist2, url3, hist3)
+    for row in csvfile:
+        (id, url1, url2, url3, rest) = row.split(';', 4)
+        if (id != "TwitterID"):
+            (url1, hist1) = get_forward(url1)
+            (url2, hist2) = get_forward(url2)
+            (url3, hist3) = get_forward(url3)
+            print_csv(id, url1, hist1, url2, hist2, url3, hist3)
